@@ -256,7 +256,8 @@ def get_defaults(config_dict, predict=False):
                 "s-code-channels": 64,
                 "number-layers": 8,
                 "scale-initialisation": False,
-                "number-gaussians": 3,
+                "number-components": 3,
+                "discretised": False,
                 "noise-direction": "x",
             },
             "memory": {
@@ -269,6 +270,7 @@ def get_defaults(config_dict, predict=False):
         defaults = {
             "model-name": None,
             "n-samples": 100,
+            "use-direct-denoiser": True,
             "data": {
                 "paths": None,
                 "save-path": None,
@@ -476,6 +478,7 @@ def load_data(
     patterns: str | list = "*.tif",
     axes: str = "SYX",
     n_dimensions: Literal[1, 2, 3] = 2,
+    return_file_names: bool = False,
     dtype: torch.dtype = torch.float32,
 ):
     """Loads data from folders.
@@ -536,4 +539,7 @@ def load_data(
     )
     images = axes_to_SCZYX(images, axes, n_dimensions)
     images = np.concatenate(images, 0).astype(float)
-    return torch.from_numpy(images).to(dtype), original_sizes
+    if not return_file_names:
+        return torch.from_numpy(images).to(dtype), original_sizes
+    else:
+        return torch.from_numpy(images).to(dtype), original_sizes, files

@@ -33,10 +33,10 @@ cfg = utils.get_defaults(cfg)
 
 print("Loading data...")
 low_snr, _ = utils.load_data(
-    cfg["data"]["paths"],
-    cfg["data"]["patterns"],
-    cfg["data"]["axes"],
-    cfg["data"]["number-dimensions"],
+    paths=cfg["data"]["paths"],
+    patterns=cfg["data"]["patterns"],
+    axes=cfg["data"]["axes"],
+    n_dimensions=cfg["data"]["number-dimensions"],
 )
 if cfg["data"]["patch-size"] is not None:
     # Split data into non-overlapping patches
@@ -81,8 +81,11 @@ datamodule = utils.DataModule(
     rand_crop_size=cfg["train-parameters"]["crop-size"],
     train_split=cfg["train-parameters"]["training-split"],
 )
+data_max = low_snr.max()
+data_min = low_snr.min()
+print(f"data min {data_min} data max {data_max}")
 # Load models
-lvae, ar_decoder, s_decoder, direct_denoiser = get_models(cfg, low_snr.shape[1])
+lvae, ar_decoder, s_decoder, direct_denoiser = get_models(cfg, low_snr.shape[1], data_max=data_max, data_min=data_min)
 
 # Each channel is normalised individually.
 mean_std_dims = [0, 2] + [i + 2 for i in range(1, cfg["data"]["number-dimensions"])]

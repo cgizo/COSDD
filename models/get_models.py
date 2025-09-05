@@ -6,7 +6,7 @@ from .s_decoder import SDecoder
 from .unet import UNet
 
 
-def get_models(config, n_channels):
+def get_models(config, n_channels, data_max=256, data_min=0):
     z_dims = [config["hyper-parameters"]["s-code-channels"] // 2] * config[
         "hyper-parameters"
     ]["number-layers"]
@@ -41,7 +41,10 @@ def get_models(config, n_channels):
         noise_direction=config["hyper-parameters"]["noise-direction"],
         n_filters=64,
         n_layers=4,
-        n_gaussians=config["hyper-parameters"]["number-gaussians"],
+        n_components=config["hyper-parameters"]["number-components"],
+        data_max=data_max,
+        data_min=data_min,
+        discretised=config["hyper-parameters"]["discretised"],
         dimensions=config["data"]["number-dimensions"],
     )
 

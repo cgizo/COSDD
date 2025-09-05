@@ -37,11 +37,12 @@ with open(os.path.join(checkpoint_path, "training-config.yaml")) as f:
     train_cfg = yaml.load(f, Loader=yaml.FullLoader)
 
 print("Loading data...")
-low_snr, original_sizes = utils.load_data(
-    cfg["data"]["paths"],
-    cfg["data"]["patterns"],
-    cfg["data"]["axes"],
-    cfg["data"]["number-dimensions"],
+low_snr, original_sizes, file_names = utils.load_data(
+    paths=cfg["data"]["paths"],
+    patterns=cfg["data"]["patterns"],
+    axes=cfg["data"]["axes"],
+    n_dimensions=cfg["data"]["number-dimensions"],
+    return_file_names=True,
 )
 low_snr_original_shape = low_snr.shape
 if cfg["data"]["patch-size"] is not None:
@@ -81,7 +82,8 @@ hub = Hub.load_from_checkpoint(
 
 if isinstance(cfg["memory"]["gpu"], int):
     cfg["memory"]["gpu"] = [cfg["memory"]["gpu"]]
-if direct_denoiser is not None:
+if cfg["use-direct-denoiser"]:
+    assert hub.direct_denoiser is not None, "Direct denoiser not trained. Set `use-direct-denoiser: False`."
     # If the direct denoiser was trained, uses it for inference
     hub.direct_pred = True
     predictor = pl.Trainer(
@@ -135,5 +137,6 @@ if not os.path.exists(save_path):
     os.makedirs(save_path)
 print(f"Saving denoised images to {save_path}")
 for i, image in enumerate(denoised):
-    save_file_name = os.path.join(save_path, f"denoised-{str(i)}.tif")
+    file_name = file_names[i].stem
+    save_file_name = os.path.join(save_path, f"{file_name}.tif")
     tifffile.imwrite(save_file_name, image)
