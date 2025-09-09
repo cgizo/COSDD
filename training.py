@@ -31,12 +31,22 @@ with open(args.config_file) as f:
 # Sets configuration options not given to defaults and checks given arguments
 cfg = utils.get_defaults(cfg)
 
+if "64" in str(cfg["memory"]["precision"]):
+    dtype = torch.float64
+elif "32" in str(cfg["memory"]["precision"]):
+    dtype = torch.float32
+elif "bf16" in str(cfg["memory"]["precision"]):
+    dtype = torch.bfloat16
+elif "16" in str(cfg["memory"]["precision"]):
+    dtype = torch.float16
+
 print("Loading data...")
 low_snr, _ = utils.load_data(
     paths=cfg["data"]["paths"],
     patterns=cfg["data"]["patterns"],
     axes=cfg["data"]["axes"],
     n_dimensions=cfg["data"]["number-dimensions"],
+    dtype=dtype,
 )
 if cfg["data"]["patch-size"] is not None:
     # Split data into non-overlapping patches
@@ -47,7 +57,7 @@ if cfg["data"]["patch-size"] is not None:
 # If there are too few images for the chosen training/validation split (e.g. 0.9/0.1), individual images will
 # have to be broken up into patches, and the patches randomly split into training/validation sets.
 # This will try to do so automatically, but should be done manually by setting data: patch-size configuration option.
-if math.ceil(cfg["train-parameters"]["training-split"] * len(low_snr)) == len(low_snr):
+if int(cfg["train-parameters"]["training-split"] * len(low_snr)) == len(low_snr):
     val_split = round(1 - cfg["train-parameters"]["training-split"], 3)
     print(
         f'Data of shape: {low_snr.size()} cannot be split {cfg["train-parameters"]["training-split"]}/\
@@ -89,27 +99,34 @@ lvae, ar_decoder, s_decoder, direct_denoiser = get_models(cfg, low_snr.shape[1],
 
 # Each channel is normalised individually.
 mean_std_dims = [0, 2] + [i + 2 for i in range(1, cfg["data"]["number-dimensions"])]
-if "64" in str(cfg["memory"]["precision"]):
-    dtype = torch.float64
-elif "32" in str(cfg["memory"]["precision"]):
-    dtype = torch.float32
-elif "bf16" in str(cfg["memory"]["precision"]):
-    dtype = torch.bfloat16
-elif "16" in str(cfg["memory"]["precision"]):
-    dtype = torch.float16
 data_mean = low_snr.mean(mean_std_dims, keepdims=True).to(dtype)
 data_std = low_snr.std(mean_std_dims, keepdims=True).to(dtype)
 
-hub = Hub(
-    vae=lvae,
-    ar_decoder=ar_decoder,
-    s_decoder=s_decoder,
-    direct_denoiser=direct_denoiser,
-    data_mean=data_mean,
-    data_std=data_std,
-    n_grad_batches=cfg["train-parameters"]["number-grad-batches"],
-    checkpointed=cfg["memory"]["checkpointed"],
-)
+if cfg["pretrained-path"] is not None:
+    hub = Hub(
+        vae=lvae,
+        ar_decoder=ar_decoder,
+        s_decoder=s_decoder,
+        direct_denoiser=None,
+        data_mean=data_mean,
+        data_std=data_std,
+        n_grad_batches=cfg["train-parameters"]["number-grad-batches"],
+        checkpointed=cfg["memory"]["checkpointed"],
+    )
+    params = torch.load(cfg["pretrained-path"], weights_only=True)
+    hub.load_state_dict(params, strict=False)
+    hub.direct_denoiser = direct_denoiser
+else:
+    hub = Hub(
+        vae=lvae,
+        ar_decoder=ar_decoder,
+        s_decoder=s_decoder,
+        direct_denoiser=None,
+        data_mean=data_mean,
+        data_std=data_std,
+        n_grad_batches=cfg["train-parameters"]["number-grad-batches"],
+        checkpointed=cfg["memory"]["checkpointed"],
+    )
 
 checkpoint_path = os.path.join("checkpoints", cfg["model-name"])
 logger = TensorBoardLogger(checkpoint_path)
@@ -134,7 +151,7 @@ trainer = pl.Trainer(
 )
 # Train model
 try:
-    trainer.fit(hub, datamodule=datamodule)
+    trainer.fit(hub, datamodule=datamodule, ckpt_path=cfg["continue-checkpoint"])
 except KeyboardInterrupt:
     print("KeyboardInterupt")
 finally:

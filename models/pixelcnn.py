@@ -1,7 +1,6 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-import numpy as np
 from tqdm import tqdm
 
 from .nn import PixelCNNLayers as Layers
@@ -23,7 +22,7 @@ class DiscreteLogistic:
         self.num_vals = max_bound - min_bound
 
     def __call__(self, y, means, log_scales, mixture_logits):
-        inv_scales = torch.exp(-log_scales)
+        inv_scales = torch.exp(-log_scales).to(y.dtype)
 
         y_range = self.max_bound - self.min_bound
         # explained in text
@@ -40,19 +39,19 @@ class DiscreteLogistic:
         lower_cdf = torch.sigmoid(lower_bound_in)
         # finally, the probability mass and equivalent log prob
         prob_mass = upper_cdf - lower_cdf
-        vanilla_log_prob = torch.log(torch.clamp(prob_mass, min=1e-12))
+        vanilla_log_prob = torch.log(torch.clamp(prob_mass, min=1e-12)).to(y.dtype)
 
         # edges
         low_bound_log_prob = upper_bound_in - F.softplus(
             upper_bound_in
-        )  # log probability for edge case of 0 (before scaling)
+        ).to(y.dtype)  # log probability for edge case of 0 (before scaling)
         upp_bound_log_prob = -F.softplus(
             lower_bound_in
-        )  # log probability for edge case of 255 (before scaling)
+        ).to(y.dtype)  # log probability for edge case of 255 (before scaling)
         # middle
         mid_in = inv_scales * centered_y
-        log_pdf_mid = mid_in - log_scales - 2.0 * F.softplus(mid_in)
-        log_prob_mid = log_pdf_mid - np.log((self.num_vals - 1) / 2)
+        log_pdf_mid = mid_in - log_scales - 2.0 * F.softplus(mid_in).to(y.dtype)
+        log_prob_mid = log_pdf_mid - torch.log((self.num_vals - 1) / 2).to(y.dtype)
 
         # Create a tensor with the same shape as 'y', filled with zeros
         log_probs = torch.zeros_like(centered_y)
@@ -75,10 +74,10 @@ class DiscreteLogistic:
         ]
 
         # modeling which mixture to sample from
-        log_probs = log_probs + F.log_softmax(mixture_logits, dim=-1)
+        log_probs = log_probs + F.log_softmax(mixture_logits, dim=-1, dtype=y.dtype)
 
         # log likelihood
-        log_likelihood = torch.logsumexp(log_probs, dim=-1)
+        log_likelihood = torch.logsumexp(log_probs, dim=-1).to(y.dtype)
 
         return log_likelihood
 

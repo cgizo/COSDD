@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Literal
 
 from pytorch_lightning import LightningDataModule
+from tqdm import tqdm
 import torch
 import numpy as np
 from sklearn.linear_model import LinearRegression
@@ -232,6 +233,8 @@ def get_defaults(config_dict, predict=False):
     if not predict:
         defaults = {
             "model-name": None,
+            "continue-checkpoint": None,
+            "pretrained-path": None,
             "data": {
                 "paths": None,
                 "patterns": None,
@@ -313,6 +316,22 @@ def get_defaults(config_dict, predict=False):
     return config_dict
 
 
+# def axes_to_SCZYX(images, axes, n_dimensions):
+#     spatial_axes = [d for d in "TZYX" if d in axes]
+#     spatial_axes = spatial_axes[-n_dimensions:]
+#     sample_axes = [d for d in "STZYXC" if d in axes and d not in spatial_axes]
+#     target_axes = sample_axes + spatial_axes
+#     target_transpose = [axes.index(d) for d in target_axes]
+#     missing_axes = [i for i in range(len(axes)) if i not in target_transpose]
+#     target_transpose = missing_axes + target_transpose
+#     images = [i.transpose(target_transpose) for i in images]
+#     if "C" not in axes:
+#         images = [np.expand_dims(i, -n_dimensions - 1) for i in images]
+#     images = [
+#         i.reshape(-1, i.shape[-n_dimensions - 1], *i.shape[-n_dimensions:])
+#         for i in images
+#     ]
+#     return images
 def axes_to_SCZYX(images, axes, n_dimensions):
     spatial_axes = [d for d in "TZYX" if d in axes]
     spatial_axes = spatial_axes[-n_dimensions:]
@@ -321,14 +340,42 @@ def axes_to_SCZYX(images, axes, n_dimensions):
     target_transpose = [axes.index(d) for d in target_axes]
     missing_axes = [i for i in range(len(axes)) if i not in target_transpose]
     target_transpose = missing_axes + target_transpose
-    images = [i.transpose(target_transpose) for i in images]
-    if "C" not in axes:
-        images = [np.expand_dims(i, -n_dimensions - 1) for i in images]
-    images = [
-        i.reshape(-1, i.shape[-n_dimensions - 1], *i.shape[-n_dimensions:])
-        for i in images
-    ]
-    return images
+
+    # Convert list of arrays to a single array if possible (saves RAM)
+    try:
+        images = np.asarray(images)  # Only if shapes match
+    except ValueError:
+        pass  # fallback if images are of different shapes
+
+    if isinstance(images, np.ndarray):
+        # Transpose once
+        images = images.transpose([0] + [i + 1 for i in target_transpose])  # adjust for batch dim
+
+        # Expand channels if not present
+        if "C" not in axes:
+            images = np.expand_dims(images, -n_dimensions - 1)
+
+        # Reshape in one go
+        new_shape = (
+            -1,
+            images.shape[-n_dimensions - 1],  # C
+            *images.shape[-n_dimensions:],   # ZYX
+        )
+        images = images.reshape(new_shape)
+        return images
+    else:
+        # Fallback for irregular shapes
+        result = []
+        for i in images:
+            transposed = i.transpose(target_transpose)
+            if "C" not in axes:
+                transposed = np.expand_dims(transposed, -n_dimensions - 1)
+            reshaped = transposed.reshape(
+                -1, transposed.shape[-n_dimensions - 1], *transposed.shape[-n_dimensions:]
+            )
+            result.extend(reshaped)
+        images = np.concatenate(result, 0)    
+        return result
 
 
 def SCZYX_to_axes(images, original_axes, original_sizes):
@@ -520,7 +567,7 @@ def load_data(
     len(files) != 0 or _raise(FileNotFoundError("Could not find any images"))
     file_type = Path(files[0]).suffix
     imread_fn = get_imread_fn(file_type)
-    images = [imread_fn(f) for f in files]
+    images = [imread_fn(f) for f in tqdm(files)]
     original_sizes = []
     # spatial_dims = [axes.index(i) for i in "XYZT"][:n_dimensions]
     # spatial_sizes = np.array(images[0].shape)[spatial_dims]
@@ -538,7 +585,7 @@ def load_data(
         ValueError(f"Axes {axes} do not match shape of images: {images[0].shape}")
     )
     images = axes_to_SCZYX(images, axes, n_dimensions)
-    images = np.concatenate(images, 0).astype(float)
+    # images = np.concatenate(images, 0)
     if not return_file_names:
         return torch.from_numpy(images).to(dtype), original_sizes
     else:
