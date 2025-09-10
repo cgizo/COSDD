@@ -567,7 +567,7 @@ def load_data(
     len(files) != 0 or _raise(FileNotFoundError("Could not find any images"))
     file_type = Path(files[0]).suffix
     imread_fn = get_imread_fn(file_type)
-    images = [imread_fn(f) for f in tqdm(files)]
+    images = [imread_fn(f) for f in tqdm(files, desc="Loading images")]
     original_sizes = []
     # spatial_dims = [axes.index(i) for i in "XYZT"][:n_dimensions]
     # spatial_sizes = np.array(images[0].shape)[spatial_dims]
@@ -585,7 +585,8 @@ def load_data(
         ValueError(f"Axes {axes} do not match shape of images: {images[0].shape}")
     )
     images = axes_to_SCZYX(images, axes, n_dimensions)
-    # images = np.concatenate(images, 0)
+    images = np.concatenate(images, 0)#.astype(np.float32) #original had this commented out. astype for memory management 
+
     if not return_file_names:
         return torch.from_numpy(images).to(dtype), original_sizes
     else:
