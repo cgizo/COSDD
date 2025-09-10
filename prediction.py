@@ -138,5 +138,5 @@ if not os.path.exists(save_path):
 print(f"Saving denoised images to {save_path}")
 for i, image in enumerate(denoised):
     file_name = file_names[i].stem
-    save_file_name = os.path.join(save_path, f"{file_name}.tif")
+    save_file_name = os.path.join(save_path, f"{file_name[:-4]}.tif") # remove [:-4] when not using .ome.tif!!!
     tifffile.imwrite(save_file_name, image)
