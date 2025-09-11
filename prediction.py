@@ -52,10 +52,8 @@ print(f"Noisy data shape: {low_snr.size()}")
 
 if cfg["data"]["clip-outliers"]:
     # Clip data values outside of 1st and 99th percentiles
-    print("Clippping min...")
-    clip_min = np.percentile(low_snr, 1)
-    print("Clippping max...")
-    clip_max = np.percentile(low_snr, 99)
+    print("Computing percentiles for clipping...")
+    clip_min, clip_max = np.percentile(low_snr, (1, 99))
     low_snr = torch.clamp(low_snr, clip_min, clip_max)
 
 # Use data to create pytorch dataset
@@ -132,6 +130,7 @@ denoised = utils.SCZYX_to_axes(
 # Each image that was an individual file before denoising will be saved as an individual denoised image
 current_time = time.strftime("%d-%m-%y_%H-%M-%S", time.localtime())
 save_path = os.path.join(cfg["data"]["save-path"], f"denoised-{current_time}")
+print(cfg['model-name'])
 if not os.path.exists(save_path):
     print(f"Creating directory: {save_path}")
     os.makedirs(save_path)
@@ -139,4 +138,5 @@ print(f"Saving denoised images to {save_path}")
 for i, image in enumerate(denoised):
     file_name = file_names[i].stem
     save_file_name = os.path.join(save_path, f"{file_name[:-4]}.tif") # remove [:-4] when not using .ome.tif!!!
+
     tifffile.imwrite(save_file_name, image)
