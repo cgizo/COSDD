@@ -19,8 +19,6 @@ from models.get_models import get_models
 from models.hub import Hub
 
 
-assert torch.cuda.is_available()
-
 # Load configuration options
 parser = argparse.ArgumentParser()
 parser.add_argument("config_file")
