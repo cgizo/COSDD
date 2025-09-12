@@ -132,11 +132,15 @@ class RandomCrop:
 
 
 class TrainDataset(torch.utils.data.Dataset):
-    def __init__(self, images, n_iters=1, transform=None):
+    def __init__(self, images, n_iters=1, transform=None, max_images=None):
         self.images = images
         self.n_images = len(images)
+
         self.n_iters = n_iters
         self.transform = transform
+        if max_images is not None:
+            self.n_images = min(self.n_images, max_images)
+            self.images = self.images[: self.n_images]
 
     def __len__(self):
         return self.n_images * self.n_iters
@@ -156,15 +160,19 @@ class DataModule(LightningDataModule):
         batch_size=4,
         rand_crop_size=(256, 256),
         train_split=0.9,
+        max_train_images=None,
+        max_val_images=None,
     ):
         super().__init__()
         self.low_snr = low_snr
         self.batch_size = batch_size
         self.rand_crop_size = rand_crop_size
         self.train_split = train_split
+        self.max_train_images = max_train_images
+        self.max_val_images = max_val_images
 
     def setup(self, stage):
-        n_iters = np.prod(self.low_snr.shape[2:]) // np.prod(self.rand_crop_size)
+        n_iters = 1#np.prod(self.low_snr.shape[2:]) // np.prod(self.rand_crop_size)
         rand_crop = RandomCrop(self.rand_crop_size)
         random.shuffle(self.low_snr)
         train_set = self.low_snr[: int(len(self.low_snr) * self.train_split)]
@@ -174,11 +182,13 @@ class DataModule(LightningDataModule):
             train_set,
             n_iters=n_iters,
             transform=rand_crop,
+            max_images=self.max_train_images,
         )
         self.val_set = TrainDataset(
             val_set,
             n_iters=n_iters,
             transform=rand_crop,
+            max_images=self.max_val_images,
         )
 
     def train_dataloader(self):
@@ -239,6 +249,8 @@ def get_defaults(config_dict, predict=False):
                 "number-dimensions": 2,
                 "patch-size": None,
                 "clip-outliers": False,
+                "max-train-images": None,
+                "max-val-images": None,
             },
             "train-parameters": {
                 "batch-size": 4,
@@ -539,6 +551,10 @@ def load_data(
     )
     images = axes_to_SCZYX(images, axes, n_dimensions)
     images = np.concatenate(images, 0)#.astype(np.float32)
+    if images.dtype == np.uint16:
+        dtype = torch.float16
+    else:
+        dtype = torch.float32
     if not return_file_names:
         return torch.from_numpy(images).to(dtype), original_sizes
     else:

@@ -6,6 +6,8 @@ data:
   number-dimensions: 2
   patch-size: null
   clip-outliers: False
+  max-train-images: null
+  max-val-images: null
 train-parameters:
   max-time: "00:12:00:00"
   max-epochs: 1000

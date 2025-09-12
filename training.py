@@ -78,6 +78,8 @@ datamodule = utils.DataModule(
     batch_size=cfg["train-parameters"]["batch-size"],
     rand_crop_size=cfg["train-parameters"]["crop-size"],
     train_split=cfg["train-parameters"]["training-split"],
+    max_train_images=cfg["data"]["max-train-images"],
+    max_val_images=cfg["data"]["max-val-images"],
 )
 data_max = low_snr.max()
 data_min = low_snr.min()
