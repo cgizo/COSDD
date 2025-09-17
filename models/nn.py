@@ -26,9 +26,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
-from torch.distributions import Normal
 
-from .utils import Rotate90, interleave, LinearUpsample
+from .utils import Rotate90, interleave, LinearUpsample, MaxPool
 
 
 class Conv(nn.Module):
@@ -80,12 +79,14 @@ class GateLayer(nn.Module):
         super().__init__()
         assert kernel_size % 2 == 1
         pad = kernel_size // 2
-        self.conv = Conv(channels, 2 * channels, kernel_size, padding=pad, dimensions=dimensions)
+        self.conv = Conv(
+            channels, 2 * channels, kernel_size, padding=pad, dimensions=dimensions
+        )
         self.nonlin = nn.Tanh()
 
     def forward(self, x):
         x = self.conv(x)
-        x, gate = x[:, 0::2], x[:, 1::2]
+        x, gate = torch.chunk(x, 2, 1)
         x = self.nonlin(x)
         gate = torch.sigmoid(gate)
         return x * gate
@@ -109,7 +110,7 @@ class ResidualBlock(nn.Module):
         self.groups = groups
         self.gated = gated
         if scale_initialisation:
-            self.rescale = channels ** 0.5
+            self.rescale = channels**0.5
         else:
             self.rescale = 1.0
 
@@ -135,7 +136,7 @@ class ResidualBlock(nn.Module):
         out = self.block(x) + x
         out = out / self.rescale
         return out
-    
+
 
 class ResBlockWithResampling(nn.Module):
     """
@@ -148,7 +149,7 @@ class ResBlockWithResampling(nn.Module):
         res_block_kernel (int): Kernel size for the residual block.
         groups (int): Number of groups for grouped convolution.
         gated (bool): Whether to use gated activation.
-        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5). 
+        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5).
             See VDVAE, Child 2020.
         dimensions (int): Dimensionality of the data (1, 2 or 3).
 
@@ -163,6 +164,7 @@ class ResBlockWithResampling(nn.Module):
         c_in,
         c_out,
         resample=None,
+        n_resample=None,
         res_block_kernel=3,
         groups=1,
         gated=True,
@@ -171,22 +173,23 @@ class ResBlockWithResampling(nn.Module):
     ):
         super().__init__()
         assert resample in ["up", "down", None]
+        scale_factor = [2**n for n in n_resample]
 
         if resample == "up":
             self.pre_conv = nn.Sequential(
-                LinearUpsample(scale_factor=2),
+                LinearUpsample(scale_factor=scale_factor),
                 Conv(c_in, c_out, 1, groups=groups, dimensions=dimensions),
             )
         elif resample == "down":
-            self.pre_conv = Conv(
-                c_in,
-                c_out,
-                kernel_size=3,
-                stride=2,
-                padding=1,
-                padding_mode="reflect",
-                groups=groups,
-                dimensions=dimensions,
+            self.pre_conv = nn.Sequential(
+                Conv(
+                    c_in,
+                    c_out,
+                    kernel_size=1,
+                    groups=groups,
+                    dimensions=dimensions,
+                ),
+                MaxPool(scale_factor=scale_factor),
             )
         elif c_in != c_out:
             self.pre_conv = Conv(c_in, c_out, 1, groups=groups, dimensions=dimensions)
@@ -216,7 +219,7 @@ class MergeLayer(nn.Module):
         channels (int or list[int]): The number of input channels for the convolutional layer and the residual block.
             If an integer is provided, it will be used for all three channels. If a list of integers is provided,
             it should have a length of 3, representing the number of channels for each input.
-        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5). 
+        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5).
             See VDVAE, Child 2020.
         dimensions (int): Dimensionality of the data (1, 2 or 3)
 
@@ -246,8 +249,7 @@ class MergeLayer(nn.Module):
         )
 
     def forward(self, x, y):
-        x = interleave(x, y)
-        return self.layer(x)
+        return x + y
 
 
 class BottomUpLayer(nn.Module):
@@ -259,7 +261,7 @@ class BottomUpLayer(nn.Module):
         n_res_blocks (int): The number of residual blocks in the layer.
         n_filters (int): The number of filters in each residual block.
         downsampling_steps (int, optional): The number of downsampling steps to perform. Defaults to 0.
-        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5). 
+        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5).
             See VDVAE, Child 2020.
         dimensions (int): Dimensionality of the data (1, 2 or 3)
 
@@ -280,15 +282,12 @@ class BottomUpLayer(nn.Module):
 
         self.bu_blocks = nn.Sequential()
         for _ in range(n_res_blocks):
-            resample = None
-            if downsampling_steps > 0:
-                resample = "down"
-                downsampling_steps -= 1
             self.bu_blocks.append(
                 ResBlockWithResampling(
                     c_in=n_filters,
                     c_out=n_filters,
-                    resample=resample,
+                    resample="down",
+                    n_resample=downsampling_steps,
                     scale_initialisation=scale_initialisation,
                     dimensions=dimensions,
                 )
@@ -311,10 +310,10 @@ class TopDownLayer(nn.Module):
         is_top_layer (bool): Whether the layer is the top layer.
         upsampling_steps (int, optional): The number of downsampling steps to perform. Defaults to 0.
         skip (bool, optional): Whether to use a skip connection from the previous layer. Defaults to False.
-        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5). 
+        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5).
             See VDVAE, Child 2020.
         dimensions (int): Dimensionality of the data (1, 2 or 3)
-        
+
     Attributes:
         blocks (nn.Sequential): Sequential container for the residual blocks.
         merge (MergeLayer): Merge layer for combining the bottom-up and top-down paths.
@@ -339,15 +338,12 @@ class TopDownLayer(nn.Module):
 
         self.blocks = nn.Sequential()
         for _ in range(n_res_blocks):
-            resample = None
-            if upsampling_steps > 0:
-                resample = "up"
-                upsampling_steps -= 1
             self.blocks.append(
                 ResBlockWithResampling(
                     n_filters,
                     n_filters,
-                    resample=resample,
+                    resample="up",
+                    n_resample=upsampling_steps,
                     scale_initialisation=scale_initialisation,
                     dimensions=dimensions,
                 )
@@ -405,7 +401,9 @@ class NormalStochasticBlock(nn.Module):
 
     """
 
-    def __init__(self, c_in, c_vars, c_out, kernel=3, transform_p_params=True, dimensions=2):
+    def __init__(
+        self, c_in, c_vars, c_out, kernel=3, transform_p_params=True, dimensions=2
+    ):
         super().__init__()
         assert kernel % 2 == 1
         pad = kernel // 2
@@ -464,13 +462,13 @@ class NormalStochasticBlock(nn.Module):
             assert p_params.size(1) == 2 * self.c_vars
 
         # Define p(z)
-        p_mu, p_std_ = p_params[:, 0::2], p_params[:, 1::2]
+        p_mu, p_std_ = torch.chunk(p_params, 2, 1)
         p_std = nn.functional.softplus(p_std_)
 
         if q_params is not None:
             # Define q(z)
             q_params = self.conv_in_q(q_params)
-            q_mu, q_std_ = q_params[:, 0::2], q_params[:, 1::2]
+            q_mu, q_std_ = torch.chunk(q_params, 2, 1)
             q_std = nn.functional.softplus(q_std_)
 
             # Sample from q(z)
@@ -506,7 +504,7 @@ class VAETopDownLayer(nn.Module):
         stochastic_skip (bool): Whether to include a skip connection around the stochastic layer.
         learn_top_prior (bool): Whether to learn the parameters of the top prior.
         top_prior_param_size (int): Spatial size of the top prior parameters.
-        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5). 
+        scale_initialisation (bool): For stability, scale the last layer in the residual block by 1/(depth**0.5).
             See VDVAE, Child 2020.
         dimensions (int): Dimensionality of the data (1, 2 or 3)
     """
@@ -537,15 +535,12 @@ class VAETopDownLayer(nn.Module):
 
         self.deterministic_blocks = nn.Sequential()
         for _ in range(n_res_blocks):
-            resample = None
-            if upsampling_steps > 0:
-                resample = "up"
-                upsampling_steps -= 1
             self.deterministic_blocks.append(
                 ResBlockWithResampling(
                     n_filters,
                     n_filters,
-                    resample=resample,
+                    resample="up",
+                    n_resample=upsampling_steps,
                     scale_initialisation=scale_initialisation,
                     dimensions=dimensions,
                 )
@@ -742,7 +737,9 @@ class PixelCNNBlock(nn.Module):
             self.act_fn = lambda x: torch.tanh(x[:, 0::2]) * torch.sigmoid(x[:, 1::2])
         else:
             self.act_fn = nn.ReLU()
-        self.out_conv = Conv(out_channels, out_channels, 1, groups=groups, dimensions=dimensions)
+        self.out_conv = Conv(
+            out_channels, out_channels, 1, groups=groups, dimensions=dimensions
+        )
 
         self.do_skip = out_channels == in_channels and not first
 
@@ -869,7 +866,7 @@ class PixelCNNLayers(nn.Module):
             if i % 2 == 0 and self.checkpointed:
                 x, s_code = checkpoint(
                     layer,
-                    x, 
+                    x,
                     s_code,
                     use_reentrant=False,
                 )

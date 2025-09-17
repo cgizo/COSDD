@@ -57,8 +57,8 @@ def get_padded_size(size, n_downsc):
     Returns:
         tuple: The padded size of the image as a tuple of (padded_height, padded_width).
     """
-    dwnsc = 2 ** n_downsc
-    padded_size = [((s - 1) // dwnsc + 1) * dwnsc for s in size]
+    dwnsc = [2 ** d for d in n_downsc]
+    padded_size = [((s - 1) // d + 1) * d for s, d in zip(size, dwnsc)]
 
     return padded_size
 
@@ -110,6 +110,18 @@ class LinearUpsample(nn.Module):
         d = x.dim() - 2
         mode = self.modes[d]
         return nn.functional.interpolate(x, scale_factor=self.scale_factor, mode=mode)
+
+
+class MaxPool(nn.Module):
+    def __init__(self, scale_factor):
+        super().__init__()
+        self.scale_factor = scale_factor
+        self.fns = {1: nn.MaxPool1d, 2: nn.MaxPool2d, 3: nn.MaxPool3d}
+    
+    def forward(self, x):
+        d = x.dim() - 2
+        fn = self.fns[d](kernel_size=self.scale_factor, stride=self.scale_factor)
+        return fn(x)
 
 
 def plot_to_image(figure):

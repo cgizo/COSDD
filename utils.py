@@ -271,6 +271,7 @@ def get_defaults(config_dict, predict=False):
                 "number-components": 3,
                 "discretised": False,
                 "noise-direction": "x",
+                "gated-nm": False,
             },
             "memory": {
                 "precision": "bf16-mixed",
