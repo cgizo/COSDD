@@ -4,6 +4,7 @@ import argparse
 import math
 import random
 import warnings
+from pathlib import Path
 
 warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
@@ -31,7 +32,7 @@ cfg = utils.get_defaults(cfg)
 
 print("Loading data...")
 low_snr, _ = utils.load_data(
-    paths=cfg["data"]["paths"],
+    paths=Path(cfg["data"]["paths"]),
     patterns=cfg["data"]["patterns"],
     axes=cfg["data"]["axes"],
     n_dimensions=cfg["data"]["number-dimensions"],

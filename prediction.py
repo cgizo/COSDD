@@ -12,6 +12,7 @@ import pytorch_lightning as pl
 import numpy as np
 from tqdm import tqdm
 import tifffile
+from pathlib import Path
 
 import utils
 from models.get_models import get_models
@@ -38,7 +39,7 @@ with open(os.path.join(checkpoint_path, "training-config.yaml")) as f:
 
 print("Loading data...")
 low_snr, original_sizes, file_names = utils.load_data(
-    paths=cfg["data"]["paths"],
+    paths=Path(cfg["data"]["paths"]),
     patterns=cfg["data"]["patterns"],
     axes=cfg["data"]["axes"],
     n_dimensions=cfg["data"]["number-dimensions"],
@@ -129,7 +130,7 @@ denoised = utils.SCZYX_to_axes(
 # Saves denoised images using date and time as directory name
 # Each image that was an individual file before denoising will be saved as an individual denoised image
 current_time = time.strftime("%d-%m-%y_%H-%M-%S", time.localtime())
-save_path = os.path.join(cfg["data"]["save-path"], f"denoised-{current_time}")
+save_path = os.path.join(Path(cfg["data"]["save-path"]), f"denoised-{current_time}")
 print(cfg['model-name'])
 if not os.path.exists(save_path):
     print(f"Creating directory: {save_path}")
