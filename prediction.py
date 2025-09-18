@@ -37,6 +37,7 @@ if cfg["checkpoint"]["train-cfg-file"] is not None:
     checkpoint_path = Path(cfg["checkpoint"]["train-cfg-file"])
 else:
     checkpoint_path = os.path.join("checkpoints", cfg["model-name"])
+    checkpoint_path = os.path.join(checkpoint_path, "training-config.yaml")
 with open(checkpoint_path) as f:
     train_cfg = yaml.load(f, Loader=yaml.FullLoader)
 
