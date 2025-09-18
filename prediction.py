@@ -33,9 +33,13 @@ cfg = utils.get_defaults(cfg, predict=True)
 
 # Load training configurations that were stored with checkpoint
 # Used to load models with correct hyperparameters
-checkpoint_path = os.path.join("checkpoints", cfg["model-name"])
+if cfg["checkpoint"]["train-cfg-file"] is not None:
+    checkpoint_path = Path(cfg["checkpoint"]["train-cfg-file"])
+else:
+    checkpoint_path = os.path.join("checkpoints", cfg["model-name"])
 with open(os.path.join(checkpoint_path, "training-config.yaml")) as f:
     train_cfg = yaml.load(f, Loader=yaml.FullLoader)
+
 
 print("Loading data...")
 low_snr, original_sizes, file_names = utils.load_data(
@@ -70,9 +74,14 @@ predict_loader = torch.utils.data.DataLoader(
 # Load models with trained parameters
 lvae, ar_decoder, s_decoder, direct_denoiser = get_models(train_cfg, low_snr.shape[1])
 
-checkpoint_path = os.path.join("checkpoints", cfg["model-name"])
+if cfg["checkpoint"]["ckpt-file"] is not None:
+    checkpoint_path = Path(cfg['checkpoint']['ckpt-file'])
+else:
+    checkpoint_path = os.path.join("checkpoints", cfg["model-name"])
+    checkpoint_path = os.path.join(checkpoint_path, "final_model.ckpt")
+
 hub = Hub.load_from_checkpoint(
-    os.path.join(checkpoint_path, "final_model.ckpt"),
+    checkpoint_path,
     vae=lvae,
     ar_decoder=ar_decoder,
     s_decoder=s_decoder,

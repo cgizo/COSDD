@@ -293,6 +293,10 @@ def get_defaults(config_dict, predict=False):
                 "patch-size": None,
                 "clip-outliers": False,
             },
+            "checkpoint": {
+                "ckpt-file": None, #set path for model-final.ckpt file
+                "train-cfg-file": None, #if ckpt-file it not None then train-cfg-file requires path input. args must match what was used during training
+            },
             "predict-parameters": {
                 "batch-size": 1,
             },

@@ -8,6 +8,9 @@ data:
   number-dimensions: 2
   patch-size: null
   clip-outliers: False
+checkpoint:
+  ckpt-file: null
+  train-cfg-file: null
 predict-parameters:
   batch-size: 1
 memory:
