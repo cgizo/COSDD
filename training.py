@@ -11,7 +11,7 @@ warnings.filterwarnings("ignore", ".*does not have many workers.*")
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning.plugins.environments import LightningEnvironment
-from pytorch_lightning.callbacks import EarlyStopping
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 import numpy as np
 
@@ -117,12 +117,25 @@ logger = TensorBoardLogger(checkpoint_path)
 
 if isinstance(cfg["memory"]["gpu"], int):
     cfg["memory"]["gpu"] = [cfg["memory"]["gpu"]]
+
 if cfg["train-parameters"]["patience"] is not None:
     callbacks = [
-        EarlyStopping(patience=cfg["train-parameters"]["patience"], monitor="elbo/val")
-    ]
+        EarlyStopping(patience=cfg["train-parameters"]["patience"],
+                       monitor="elbo/val"),
+        ModelCheckpoint(dirpath=checkpoint_path,
+                        save_top_k=2,
+                        monitor="elbo/val",
+                        mode="min",
+                        filename='best-checkpoint-{epoch:02d}-{elbo/val:.2f}')
+]
 else:
-    callbacks = []
+    callbacks = [
+        ModelCheckpoint(dirpath=checkpoint_path,
+                        save_top_k=2,
+                        monitor="elbo/val",
+                        mode="min",
+                        filename='best-checkpoint-{epoch:02d}-{elbo/val:.2f}')]
+
 trainer = pl.Trainer(
     logger=logger,
     accelerator="gpu",
