@@ -86,7 +86,9 @@ data_max = low_snr.max()
 data_min = low_snr.min()
 print(f"data min {data_min} data max {data_max}")
 # Load models
-lvae, ar_decoder, s_decoder, direct_denoiser = get_models(cfg, low_snr.shape[1], data_max=data_max, data_min=data_min)
+lvae, ar_decoder, s_decoder, direct_denoiser = get_models(
+    cfg, low_snr.shape[1], data_max=data_max, data_min=data_min
+)
 
 # Each channel is normalised individually.
 mean_std_dims = [0, 2] + [i + 2 for i in range(1, cfg["data"]["number-dimensions"])]
@@ -118,23 +120,20 @@ logger = TensorBoardLogger(checkpoint_path)
 if isinstance(cfg["memory"]["gpu"], int):
     cfg["memory"]["gpu"] = [cfg["memory"]["gpu"]]
 
-if cfg["train-parameters"]["patience"] is not None:
-    callbacks = [
-        EarlyStopping(patience=cfg["train-parameters"]["patience"],
-                       monitor="elbo/val"),
-        ModelCheckpoint(dirpath=checkpoint_path,
-                        save_top_k=2,
-                        monitor="elbo/val",
-                        mode="min",
-                        filename='best-checkpoint-{epoch:02d}-{elbo/val:.2f}')
+callbacks = [
+    ModelCheckpoint(
+        dirpath=checkpoint_path,
+        save_top_k=2,
+        monitor="elbo/val",
+        mode="min",
+        filename="best-checkpoint-{epoch:02d}-{elbo_val:.2f}",
+    )
 ]
-else:
-    callbacks = [
-        ModelCheckpoint(dirpath=checkpoint_path,
-                        save_top_k=2,
-                        monitor="elbo/val",
-                        mode="min",
-                        filename='best-checkpoint-{epoch:02d}-{elbo/val:.2f}')]
+
+if cfg["train-parameters"]["patience"] is not None:
+    callbacks.append(
+        EarlyStopping(patience=cfg["train-parameters"]["patience"], monitor="elbo/val")
+    )
 
 trainer = pl.Trainer(
     logger=logger,
@@ -155,5 +154,5 @@ finally:
     # Save trained model
     trainer.save_checkpoint(os.path.join(checkpoint_path, f"final_model.ckpt"))
     with open(os.path.join(checkpoint_path, "training-config.yaml"), "w") as f:
-    # Save hyperparameters to load models again later
+        # Save hyperparameters to load models again later
         yaml.dump(cfg, f, default_flow_style=False)
