@@ -172,7 +172,7 @@ class DataModule(LightningDataModule):
         self.max_val_images = max_val_images
 
     def setup(self, stage):
-        n_iters = 1#np.prod(self.low_snr.shape[2:]) // np.prod(self.rand_crop_size)
+        n_iters = np.prod(self.low_snr.shape[2:]) // np.prod(self.rand_crop_size)
         rand_crop = RandomCrop(self.rand_crop_size)
         random.shuffle(self.low_snr)
         train_set = self.low_snr[: int(len(self.low_snr) * self.train_split)]
